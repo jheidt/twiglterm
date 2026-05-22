@@ -4,7 +4,7 @@ inspired by textfx, thanks sol :)
 
 a bit of vibes eh, but lots of textmode 
 
-`twiglterm` renders twigl-style fragment shaders in modern terminals.
+uvx run 'git+https://github.com/jheidt/twiglterm' play --fps 60 --style drawille https://fragcoord.xyz/s/lenp0a1d
 
 ## Install
 
