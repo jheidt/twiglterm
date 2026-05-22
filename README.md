@@ -25,24 +25,14 @@ uv sync --extra windows --extra test
 ```bash
 uv run twiglterm frame examples/gradient.frag --terminal-width 40 --terminal-height 20
 uv run twiglterm play examples/gradient.frag --fps 30
-uv run twiglterm play examples/gradient.frag --fps 30 --redraw diff
 uv run twiglterm info examples/gradient.frag
 uv run twiglterm bench examples/gradient.frag --terminal-width 80 --terminal-height 24 --style drawille
 uv run twiglterm shell examples/gradient.frag -- $SHELL
 uv run twiglterm frame examples/fragcoord-f03tybz5.frag --terminal-width 80 --terminal-height 40
-uv run twiglterm frame examples/fragcoord-f03tybz5.frag --style drawille --terminal-width 80 --terminal-height 40
 uv run twiglterm frame examples/twigl-readme.frag --terminal-width 80 --terminal-height 40
-uv run twiglterm frame examples/twigl-radial-ripple.frag --style drawille --terminal-width 80 --terminal-height 40
-uv run twiglterm frame examples/twigl-fold.frag --terminal-width 80 --terminal-height 40
-uv run twiglterm frame examples/fragcoord-s0p2uz5l.frag --terminal-width 80 --terminal-height 40
-uv run twiglterm frame examples/fragcoord-bky38y8x.frag --terminal-width 80 --terminal-height 40
-uv run twiglterm frame examples/fragcoord-p0385h9e.frag --terminal-width 80 --terminal-height 40
-uv run twiglterm frame examples/fragcoord-s7efg0rw.frag --terminal-width 80 --terminal-height 40
 uv run twiglterm frame "https://fragcoord.xyz/s/bky38y8x" --terminal-width 80 --terminal-height 40
 cat examples/piped-text.txt | uv run twiglterm pipe examples/fragcoord-f03tybz5.frag --duration 6
 ```
-
-Supported twigl v1 modes are `classic` and `geek`.
 
 Sizing and playback:
 
