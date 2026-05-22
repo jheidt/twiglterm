@@ -2,28 +2,20 @@ from __future__ import annotations
 
 import os
 import platform
-import subprocess
 import shutil
-from dataclasses import dataclass
+import subprocess
+from typing import Protocol
 
 
-@dataclass
-class PtyProcess:
-    argv: list[str]
+class PtyProcess(Protocol):
     cols: int
     rows: int
 
-    def read(self, size: int = 4096) -> bytes:
-        raise NotImplementedError
-
+    def read(self, size: int = 4096) -> bytes: ...
     def write(self, data: bytes) -> None:
-        raise NotImplementedError
-
-    def resize(self, cols: int, rows: int) -> None:
-        raise NotImplementedError
-
-    def isalive(self) -> bool:
-        raise NotImplementedError
+        ...
+    def resize(self, cols: int, rows: int) -> None: ...
+    def isalive(self) -> bool: ...
 
 
 def default_shell() -> list[str]:
@@ -51,12 +43,10 @@ def spawn(argv: list[str], cols: int, rows: int) -> PtyProcess:
     return _PosixPty(argv, cols, rows)
 
 
-class _PosixPty(PtyProcess):
-    def __post_init__(self) -> None:
-        pass
-
+class _PosixPty:
     def __init__(self, argv: list[str], cols: int, rows: int) -> None:
-        super().__init__(argv, cols, rows)
+        self.cols = cols
+        self.rows = rows
         try:
             from ptyprocess import PtyProcess as RawPty
         except Exception as exc:  # pragma: no cover
@@ -78,9 +68,10 @@ class _PosixPty(PtyProcess):
         return self.proc.isalive()
 
 
-class _WindowsPty(PtyProcess):
+class _WindowsPty:
     def __init__(self, argv: list[str], cols: int, rows: int) -> None:
-        super().__init__(argv, cols, rows)
+        self.cols = cols
+        self.rows = rows
         try:
             import winpty
         except Exception as exc:  # pragma: no cover
