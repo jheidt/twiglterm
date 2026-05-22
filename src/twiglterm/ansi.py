@@ -24,6 +24,7 @@ BRAILLE_BITS = (
     (0x04, 0x20),
     (0x40, 0x80),
 )
+_RESIZE_INDEX_CACHE: dict[tuple[int, int, int, int], tuple[np.ndarray, np.ndarray]] = {}
 
 
 def dim_pixels(pixels: np.ndarray, opacity: float) -> np.ndarray:
@@ -33,6 +34,8 @@ def dim_pixels(pixels: np.ndarray, opacity: float) -> np.ndarray:
 
 def scale_pixels(pixels: np.ndarray, level: float) -> np.ndarray:
     level = max(0.0, level)
+    if level == 1.0:
+        return pixels
     return np.clip(pixels.astype(np.float32) * level, 0, 255).astype(np.uint8)
 
 
@@ -44,8 +47,14 @@ def resize_pixels_nearest(pixels: np.ndarray, width: int, height: int) -> np.nda
         return pixels
     if width <= 0 or height <= 0:
         raise ValueError("width and height must be positive")
-    ys = np.linspace(0, src_h - 1, height).round().astype(np.int64)
-    xs = np.linspace(0, src_w - 1, width).round().astype(np.int64)
+    key = (src_w, src_h, width, height)
+    indices = _RESIZE_INDEX_CACHE.get(key)
+    if indices is None:
+        ys = np.linspace(0, src_h - 1, height).round().astype(np.int64)
+        xs = np.linspace(0, src_w - 1, width).round().astype(np.int64)
+        indices = (ys, xs)
+        _RESIZE_INDEX_CACHE[key] = indices
+    ys, xs = indices
     return pixels[ys][:, xs]
 
 
@@ -78,22 +87,9 @@ def bg(rgb: Iterable[int], mode: ColorMode) -> str:
 
 
 def pixels_to_half_blocks(pixels: np.ndarray, mode: ColorMode = ColorMode.truecolor) -> str:
-    if pixels.ndim != 3 or pixels.shape[2] < 3:
-        raise ValueError("pixels must be an HxWxRGB/RGBA array")
+    from .terminal_output import pixels_to_half_blocks_bytes
 
-    h, w = pixels.shape[:2]
-    lines: list[str] = []
-    for y in range(0, h, 2):
-        parts: list[str] = []
-        top = pixels[y, :, :3]
-        bottom = pixels[y + 1, :, :3] if y + 1 < h else np.zeros_like(top)
-        for x in range(w):
-            parts.append(fg(top[x], mode))
-            parts.append(bg(bottom[x], mode))
-            parts.append("▀")
-        parts.append(RESET)
-        lines.append("".join(parts))
-    return "\n".join(lines)
+    return pixels_to_half_blocks_bytes(pixels, mode).data.decode("utf-8", errors="replace")
 
 
 def pixels_to_drawille(
@@ -101,34 +97,9 @@ def pixels_to_drawille(
     mode: ColorMode = ColorMode.truecolor,
     threshold: float = 32.0,
 ) -> str:
-    if pixels.ndim != 3 or pixels.shape[2] < 3:
-        raise ValueError("pixels must be an HxWxRGB/RGBA array")
+    from .terminal_output import pixels_to_drawille_bytes
 
-    h, w = pixels.shape[:2]
-    lines: list[str] = []
-    for y in range(0, h, 4):
-        parts: list[str] = []
-        for x in range(0, w, 2):
-            cell = pixels[y : y + 4, x : x + 2, :3]
-            bits = 0
-            lit: list[np.ndarray] = []
-            for cy in range(cell.shape[0]):
-                for cx in range(cell.shape[1]):
-                    rgb = cell[cy, cx]
-                    luma = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]
-                    if luma >= threshold:
-                        bits |= BRAILLE_BITS[cy][cx]
-                        lit.append(rgb)
-            char = chr(0x2800 + bits) if bits else " "
-            if mode == ColorMode.mono:
-                rgb = np.array((255, 255, 255) if bits else (0, 0, 0))
-            else:
-                rgb = np.mean(lit if lit else cell.reshape(-1, 3), axis=0)
-            parts.append(fg(rgb, mode))
-            parts.append(char)
-        parts.append(RESET)
-        lines.append("".join(parts))
-    return "\n".join(lines)
+    return pixels_to_drawille_bytes(pixels, mode, threshold).data.decode("utf-8", errors="replace")
 
 
 def pixels_to_terminal(

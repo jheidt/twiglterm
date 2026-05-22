@@ -8,9 +8,10 @@ import threading
 import time
 
 from .ansi import ColorMode, clear_screen, show_cursor
-from .compositor import TerminalModel, composite
+from .compositor import TerminalModel
 from .renderer import RenderState, ShaderRenderer
 from .terminal import frame_delay, shader_frame, sleep_frame
+from .terminal_output import FrameBytes, composite_bytes, encoded_redraw
 
 
 def run_shell_loop(
@@ -25,6 +26,7 @@ def run_shell_loop(
     playback_level: float,
     render_width: int | None,
     render_height: int | None,
+    redraw: str = "diff",
 ) -> None:
     if os.name == "nt":
         _run_windows_shell_loop(
@@ -39,6 +41,7 @@ def run_shell_loop(
             playback_level,
             render_width,
             render_height,
+            redraw,
         )
     else:
         _run_posix_shell_loop(
@@ -53,10 +56,38 @@ def run_shell_loop(
             playback_level,
             render_width,
             render_height,
+            redraw,
         )
 
 
-def draw_shell_frame(renderer, model, start, frame_no, opacity, color, playback_rate, playback_level) -> None:
+def _stdout_write(data: bytes) -> None:
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.write(data.decode("utf-8", errors="replace"))
+        return
+    buffer.write(data)
+
+
+def _stdout_flush() -> None:
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.flush()
+        return
+    buffer.flush()
+
+
+def draw_shell_frame(
+    renderer,
+    model,
+    start,
+    frame_no,
+    opacity,
+    color,
+    playback_rate,
+    playback_level,
+    previous: FrameBytes | None,
+    redraw: str,
+) -> FrameBytes:
     pixels = shader_frame(
         renderer,
         RenderState((time.monotonic() - start) * playback_rate, frame_no),
@@ -64,8 +95,10 @@ def draw_shell_frame(renderer, model, start, frame_no, opacity, color, playback_
         model.rows * 2,
         playback_level,
     )
-    sys.stdout.write("\x1b[H" + composite(pixels, model.cells(), color, opacity, model.cursor))
-    sys.stdout.flush()
+    output = composite_bytes(pixels, model.cells(), color, opacity, model.cursor)
+    _stdout_write(encoded_redraw(previous, output, redraw))
+    _stdout_flush()
+    return output
 
 
 def resize_shell(
@@ -100,6 +133,7 @@ def _run_posix_shell_loop(
     playback_level,
     render_width,
     render_height,
+    redraw,
 ) -> None:
     import termios
     import tty
@@ -112,7 +146,8 @@ def _run_posix_shell_loop(
     start = time.monotonic()
     frame_no = 0
     last_activity = start
-    sys.stdout.write(clear_screen())
+    previous: FrameBytes | None = None
+    _stdout_write(clear_screen().encode("ascii"))
     try:
         tty.setraw(fd)
         while child.isalive():
@@ -130,11 +165,13 @@ def _run_posix_shell_loop(
                     if data:
                         model.feed(data.decode(errors="replace"))
                         last_activity = time.monotonic()
-            draw_shell_frame(renderer, model, start, frame_no, opacity, color, playback_rate, playback_level)
+            previous = draw_shell_frame(
+                renderer, model, start, frame_no, opacity, color, playback_rate, playback_level, previous, redraw
+            )
             frame_no += 1
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        sys.stdout.write(show_cursor() + "\n")
+        _stdout_write((show_cursor() + "\n").encode("ascii"))
 
 
 def _run_windows_shell_loop(
@@ -149,6 +186,7 @@ def _run_windows_shell_loop(
     playback_level,
     render_width,
     render_height,
+    redraw,
 ) -> None:
     import msvcrt
 
@@ -168,7 +206,8 @@ def _run_windows_shell_loop(
     start = time.monotonic()
     frame_no = 0
     last_activity = start
-    sys.stdout.write(clear_screen())
+    previous: FrameBytes | None = None
+    _stdout_write(clear_screen().encode("ascii"))
     try:
         while child.isalive():
             resize_shell(child, renderer, model, render_width, render_height)
@@ -185,11 +224,12 @@ def _run_windows_shell_loop(
                     break
                 model.feed(data.decode(errors="replace"))
                 last_activity = time.monotonic()
-            draw_shell_frame(renderer, model, start, frame_no, opacity, color, playback_rate, playback_level)
+            previous = draw_shell_frame(
+                renderer, model, start, frame_no, opacity, color, playback_rate, playback_level, previous, redraw
+            )
             frame_no += 1
             active = time.monotonic() - last_activity < 0.2
             sleep_frame(frame_delay(active_fps if active else idle_fps))
     finally:
         stop.set()
-        sys.stdout.write(show_cursor() + "\n")
-
+        _stdout_write((show_cursor() + "\n").encode("ascii"))

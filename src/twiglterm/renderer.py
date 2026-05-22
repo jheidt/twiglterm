@@ -29,6 +29,9 @@ class ShaderRenderer:
         self._fbo = None
         self._color = None
         self._back = None
+        self._uniforms: dict[str, object] = {}
+        self._uniform_names: dict[str, str] = {}
+        self._backbuffer_name: str | None = None
         self._init_gl()
 
     @property
@@ -53,6 +56,7 @@ class ShaderRenderer:
             self._color = self._ctx.texture((self.width, self.height), 4)
             self._back = self._ctx.texture((self.width, self.height), 4)
             self._fbo = self._ctx.framebuffer(color_attachments=[self._color])
+            self._cache_uniforms()
         except Exception as exc:  # pragma: no cover
             detail = str(exc)
             if isinstance(exc, NameError) and "mgl" in detail:
@@ -77,14 +81,13 @@ class ShaderRenderer:
         assert self._color is not None
         assert self._back is not None
 
-        aliases = uniform_aliases(self.prepared.mode)
-        self._set_uniform(aliases["resolution"], (float(self.width), float(self.height)))
-        self._set_uniform(aliases["mouse"], state.mouse)
-        self._set_uniform(aliases["time"], float(state.time))
-        self._set_uniform(aliases["frame"], int(state.frame))
-        if aliases["backbuffer"] in self._program:
+        self._set_uniform("resolution", (float(self.width), float(self.height)))
+        self._set_uniform("mouse", state.mouse)
+        self._set_uniform("time", float(state.time))
+        self._set_uniform("frame", int(state.frame))
+        if self._backbuffer_name is not None:
             self._back.use(0)
-            self._program[aliases["backbuffer"]].value = 0
+            self._uniforms[self._backbuffer_name].value = 0
 
         self._fbo.use()
         self._ctx.viewport = (0, 0, self.width, self.height)
@@ -92,11 +95,24 @@ class ShaderRenderer:
         raw = self._fbo.read(components=4, alignment=1)
         pixels = np.frombuffer(raw, dtype=np.uint8).reshape((self.height, self.width, 4))
         pixels = np.flipud(pixels).copy()
-        self._back.write(np.flipud(pixels).tobytes())
+        if self._backbuffer_name is not None:
+            self._back.write(np.flipud(pixels).tobytes())
         return pixels
 
-    def _set_uniform(self, name: str, value: object) -> None:
+    def _cache_uniforms(self) -> None:
         assert self._program is not None
-        if name not in self._program:
+        aliases = uniform_aliases(self.prepared.mode)
+        self._uniform_names = aliases
+        self._uniforms = {}
+        for name in aliases.values():
+            try:
+                self._uniforms[name] = self._program[name]
+            except KeyError:
+                continue
+        self._backbuffer_name = aliases["backbuffer"] if aliases["backbuffer"] in self._uniforms else None
+
+    def _set_uniform(self, logical_name: str, value: object) -> None:
+        name = self._uniform_names.get(logical_name)
+        if name is None or name not in self._uniforms:
             return
-        self._program[name].value = value
+        self._uniforms[name].value = value

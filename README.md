@@ -19,10 +19,20 @@ uv sync --extra windows --extra test
 ```bash
 uv run twiglterm frame examples/gradient.frag --terminal-width 40 --terminal-height 20
 uv run twiglterm play examples/gradient.frag --fps 30
+uv run twiglterm play examples/gradient.frag --fps 30 --redraw diff
 uv run twiglterm info examples/gradient.frag
+uv run twiglterm bench examples/gradient.frag --terminal-width 80 --terminal-height 24 --style drawille
 uv run twiglterm shell examples/gradient.frag -- $SHELL
 uv run twiglterm frame examples/fragcoord-f03tybz5.frag --terminal-width 80 --terminal-height 40
 uv run twiglterm frame examples/fragcoord-f03tybz5.frag --style drawille --terminal-width 80 --terminal-height 40
+uv run twiglterm frame examples/twigl-readme.frag --terminal-width 80 --terminal-height 40
+uv run twiglterm frame examples/twigl-radial-ripple.frag --style drawille --terminal-width 80 --terminal-height 40
+uv run twiglterm frame examples/twigl-fold.frag --terminal-width 80 --terminal-height 40
+uv run twiglterm frame examples/fragcoord-s0p2uz5l.frag --terminal-width 80 --terminal-height 40
+uv run twiglterm frame examples/fragcoord-bky38y8x.frag --terminal-width 80 --terminal-height 40
+uv run twiglterm frame examples/fragcoord-p0385h9e.frag --terminal-width 80 --terminal-height 40
+uv run twiglterm frame examples/fragcoord-s7efg0rw.frag --terminal-width 80 --terminal-height 40
+uv run twiglterm frame "https://fragcoord.xyz/s/bky38y8x" --terminal-width 80 --terminal-height 40
 cat examples/piped-text.txt | uv run twiglterm pipe examples/fragcoord-f03tybz5.frag --duration 6
 ```
 
@@ -40,6 +50,9 @@ uv run twiglterm frame examples/fragcoord-f03tybz5.frag --terminal-width 80 --te
 # fps=0 is unbounded; playback-rate changes shader time speed; playback-level scales output intensity.
 uv run twiglterm play examples/gradient.frag --fps 0 --duration 2 --playback-rate 0.5 --playback-level 1.4
 
+# Animated modes default to row diff redraw; use full when a terminal needs complete repainting.
+uv run twiglterm play examples/gradient.frag --redraw full --duration 2
+
 # Foreground mode prints only the shader. Background mode composites text over shader-colored cells.
 uv run twiglterm frame examples/gradient.frag --layer foreground
 cat examples/piped-text.txt | uv run twiglterm pipe examples/gradient.frag --layer background
@@ -48,8 +61,26 @@ cat examples/piped-text.txt | uv run twiglterm pipe examples/gradient.frag --lay
 uv run twiglterm compare examples/fragcoord-f03tybz5.frag examples/flare2-reference.png --terminal-width 160 --terminal-height 90 --render-width 320 --render-height 180 --time-scan 0:12:1
 ```
 
+Shader arguments can be local files or supported URLs:
+
+```bash
+# FragCoord public shader URLs are fetched through FragCoord's public API.
+uv run twiglterm frame "https://fragcoord.xyz/s/p0385h9e" --terminal-width 80 --terminal-height 40
+
+# twigl.app URLs are supported when the shader is present in a source= query parameter.
+uv run twiglterm frame "https://twigl.app/?mode=0&source=void+main()%7Bgl_FragColor%3Dvec4(1,0,1,1)%3B%7D" --terminal-width 20 --terminal-height 10
+
+# Shadertoy source-query URLs are adapted; normal /view/ IDs require a Shadertoy API key and are reported clearly.
+uv run twiglterm info "https://www.shadertoy.com/view/example?source=void+mainImage(out+vec4+c,in+vec2+p)%7Bc%3Dvec4(1)%3B%7D"
+```
+
 `examples/fragcoord-f03tybz5.frag` is a GLSL translation of the public FragCoord shader at <https://fragcoord.xyz/s/f03tybz5>. The original golf source is preserved in `examples/fragcoord-f03tybz5.golf`.
 `examples/flare2-reference.png` is the reference render used by `twiglterm compare`.
+Additional twigl examples are pulled from the official twigl README, a public twigl.app shared URL, and a twigl tutorial article.
+`examples/fragcoord-s0p2uz5l.frag` is adapted from a CC-BY-NC-SA-4.0 FragCoord shader by @Jaenam.
+`examples/fragcoord-bky38y8x.frag` is adapted from a CC0 FragCoord shader.
+`examples/fragcoord-p0385h9e.frag` is adapted from an MIT FragCoord shader by @yli110.
+`examples/fragcoord-s7efg0rw.frag` is adapted from an MIT FragCoord shader by @krisselden.
 
 Example launchers:
 

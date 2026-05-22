@@ -13,23 +13,30 @@ from .ansi import (
     ColorMode,
     RenderStyle,
     clear_screen,
-    pixels_to_terminal,
     resize_pixels_nearest,
+    scale_pixels,
     show_cursor,
 )
-from .compositor import TerminalModel, composite
+from .compositor import TerminalModel
 from .compare import compare_rgb, load_reference, parse_time_scan, terminal_preview_pixels
 from .pty_backend import shell_command, spawn
 from .renderer import RenderState, ShaderRenderer
 from .renderer import RendererError
 from .shader import prepare_fragment
 from .shell_loop import run_shell_loop as _run_shell_loop
+from .sources import ShaderSourceError, read_shader_source
 from .terminal import (
     frame_delay as _frame_delay,
     geometry as _geometry,
     shader_frame as _shader_frame,
     sleep_frame as _sleep_frame,
     terminal_grid_size as _terminal_grid_size,
+)
+from .terminal_output import (
+    FrameBytes,
+    composite_bytes,
+    encoded_redraw,
+    pixels_to_terminal_bytes,
 )
 from .text import blank_cells as _blank_cells
 from .text import text_cells as _text_cells
@@ -49,6 +56,11 @@ class LayerMode(str, Enum):
     background = "background"
 
 
+class RedrawMode(str, Enum):
+    full = "full"
+    diff = "diff"
+
+
 def main() -> None:
     _configure_stdio()
     app()
@@ -60,8 +72,12 @@ def _configure_stdio() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
-def _read_shader(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+def _read_shader(value: str) -> str:
+    try:
+        return read_shader_source(value).source
+    except ShaderSourceError as exc:
+        console.print(f"[red]shader source error:[/red] {exc}")
+        raise typer.Exit(1) from exc
 
 
 def _parse_mouse(value: str) -> tuple[float, float]:
@@ -80,9 +96,25 @@ def _renderer(source: str, width: int, height: int, mode: str) -> ShaderRenderer
         raise typer.Exit(1) from exc
 
 
+def _stdout_write(data: bytes) -> None:
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.write(data.decode("utf-8", errors="replace"))
+        return
+    buffer.write(data)
+
+
+def _stdout_flush() -> None:
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:
+        sys.stdout.flush()
+        return
+    buffer.flush()
+
+
 @app.command()
 def info(
-    shader: Path,
+    shader: str,
     mode: Mode = typer.Option(Mode.auto),
 ) -> None:
     source = _read_shader(shader)
@@ -102,7 +134,7 @@ def info(
 
 @app.command()
 def frame(
-    shader: Path,
+    shader: str,
     mode: Mode = typer.Option(Mode.auto),
     terminal_width: Optional[int] = typer.Option(None, "--terminal-width", "--width"),
     terminal_height: Optional[int] = typer.Option(None, "--terminal-height", "--height"),
@@ -130,14 +162,15 @@ def frame(
     )
     if layer == LayerMode.background:
         bg_pixels = resize_pixels_nearest(pixels, geo.cols, geo.rows * 2)
-        sys.stdout.write(composite(bg_pixels, _blank_cells(geo.cols, geo.rows), color, background_opacity) + "\n")
+        output = composite_bytes(bg_pixels, _blank_cells(geo.cols, geo.rows), color, background_opacity)
     else:
-        sys.stdout.write(pixels_to_terminal(pixels, color, style, drawille_threshold) + "\n")
+        output = pixels_to_terminal_bytes(pixels, color, style, drawille_threshold)
+    _stdout_write(output.data + b"\n")
 
 
 @app.command()
 def play(
-    shader: Path,
+    shader: str,
     mode: Mode = typer.Option(Mode.auto),
     terminal_width: Optional[int] = typer.Option(None, "--terminal-width", "--width"),
     terminal_height: Optional[int] = typer.Option(None, "--terminal-height", "--height"),
@@ -153,39 +186,44 @@ def play(
     layer: LayerMode = LayerMode.foreground,
     background_opacity: float = typer.Option(0.35),
     drawille_threshold: float = typer.Option(32.0),
+    redraw: RedrawMode = RedrawMode.diff,
 ) -> None:
     geo = _geometry(terminal_width, terminal_height, style, render_width, render_height)
     renderer = _renderer(_read_shader(shader), geo.render_width, geo.render_height, mode.value)
     start = time.monotonic()
     frame_no = 0
     delay = _frame_delay(fps)
-    sys.stdout.write(clear_screen())
+    mouse_xy = _parse_mouse(mouse)
+    blank = _blank_cells(geo.cols, geo.rows)
+    previous: FrameBytes | None = None
+    _stdout_write(clear_screen().encode("ascii"))
     try:
         while duration is None or time.monotonic() - start < duration:
             now = time.monotonic() - start
             pixels = _shader_frame(
                 renderer,
-                RenderState(now * playback_rate, frame_no, _parse_mouse(mouse)),
+                RenderState(now * playback_rate, frame_no, mouse_xy),
                 geo.target_width,
                 geo.target_height,
                 playback_level,
             )
             if layer == LayerMode.background:
                 bg_pixels = resize_pixels_nearest(pixels, geo.cols, geo.rows * 2)
-                output = composite(bg_pixels, _blank_cells(geo.cols, geo.rows), color, background_opacity)
+                output = composite_bytes(bg_pixels, blank, color, background_opacity)
             else:
-                output = pixels_to_terminal(pixels, color, style, drawille_threshold)
-            sys.stdout.write("\x1b[H" + output)
-            sys.stdout.flush()
+                output = pixels_to_terminal_bytes(pixels, color, style, drawille_threshold)
+            _stdout_write(encoded_redraw(previous, output, redraw.value))
+            _stdout_flush()
+            previous = output
             frame_no += 1
             _sleep_frame(delay)
     finally:
-        sys.stdout.write(show_cursor() + "\n")
+        _stdout_write((show_cursor() + "\n").encode("ascii"))
 
 
 @app.command()
 def compare(
-    shader: Path,
+    shader: str,
     reference: Path,
     mode: Mode = typer.Option(Mode.auto),
     terminal_width: Optional[int] = typer.Option(None, "--terminal-width", "--width"),
@@ -237,10 +275,68 @@ def compare(
         raise typer.Exit(1)
 
 
+@app.command()
+def bench(
+    shader: str,
+    mode: Mode = typer.Option(Mode.auto),
+    terminal_width: Optional[int] = typer.Option(None, "--terminal-width", "--width"),
+    terminal_height: Optional[int] = typer.Option(None, "--terminal-height", "--height"),
+    render_width: Optional[int] = None,
+    render_height: Optional[int] = None,
+    iterations: int = typer.Option(60, min=1),
+    warmup: int = typer.Option(3, min=0),
+    playback_level: float = typer.Option(1.0),
+    mouse: str = "0,0",
+    color: ColorMode = ColorMode.truecolor,
+    style: RenderStyle = RenderStyle.half,
+    layer: LayerMode = LayerMode.foreground,
+    background_opacity: float = typer.Option(0.35),
+    drawille_threshold: float = typer.Option(32.0),
+) -> None:
+    geo = _geometry(terminal_width, terminal_height, style, render_width, render_height)
+    renderer = _renderer(_read_shader(shader), geo.render_width, geo.render_height, mode.value)
+    mouse_xy = _parse_mouse(mouse)
+    blank = _blank_cells(geo.cols, geo.rows)
+    samples: list[tuple[float, float, float, int]] = []
+
+    for frame_no in range(warmup + iterations):
+        state = RenderState(frame_no / 60.0, frame_no, mouse_xy)
+        t0 = time.perf_counter()
+        pixels = renderer.render(state)
+        t1 = time.perf_counter()
+        if pixels.shape[1] != geo.target_width or pixels.shape[0] != geo.target_height:
+            pixels = resize_pixels_nearest(pixels, geo.target_width, geo.target_height)
+        if playback_level != 1.0:
+            pixels = scale_pixels(pixels, playback_level)
+        t2 = time.perf_counter()
+        if layer == LayerMode.background:
+            bg_pixels = resize_pixels_nearest(pixels, geo.cols, geo.rows * 2)
+            output = composite_bytes(bg_pixels, blank, color, background_opacity)
+        else:
+            output = pixels_to_terminal_bytes(pixels, color, style, drawille_threshold)
+        t3 = time.perf_counter()
+        if frame_no >= warmup:
+            samples.append((t1 - t0, t2 - t1, t3 - t2, len(output.data)))
+
+    render_s = sum(sample[0] for sample in samples) / len(samples)
+    resize_s = sum(sample[1] for sample in samples) / len(samples)
+    encode_s = sum(sample[2] for sample in samples) / len(samples)
+    bytes_avg = sum(sample[3] for sample in samples) / len(samples)
+    total_s = render_s + resize_s + encode_s
+    console.print(f"terminal: {geo.cols}x{geo.rows} style={style.value} layer={layer.value}")
+    console.print(f"render_backend: {geo.render_width}x{geo.render_height} target_pixels={geo.target_width}x{geo.target_height}")
+    console.print(f"render_ms: {render_s * 1000:.3f}")
+    console.print(f"resize_scale_ms: {resize_s * 1000:.3f}")
+    console.print(f"terminal_encode_ms: {encode_s * 1000:.3f}")
+    console.print(f"write_bytes: {bytes_avg:.0f}")
+    console.print(f"total_frame_ms: {total_s * 1000:.3f}")
+    console.print(f"estimated_fps_before_terminal_write: {1.0 / total_s:.1f}")
+
+
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def shell(
     ctx: typer.Context,
-    shader: Path,
+    shader: str,
     mode: Mode = typer.Option(Mode.auto),
     terminal_width: Optional[int] = typer.Option(None, "--terminal-width", "--width"),
     terminal_height: Optional[int] = typer.Option(None, "--terminal-height", "--height"),
@@ -253,6 +349,7 @@ def shell(
     playback_rate: float = typer.Option(1.0),
     playback_level: float = typer.Option(1.0),
     color: ColorMode = ColorMode.truecolor,
+    redraw: RedrawMode = RedrawMode.diff,
 ) -> None:
     command = list(ctx.args)
     if command and command[0] == "--":
@@ -274,12 +371,13 @@ def shell(
         playback_level,
         render_width,
         render_height,
+        redraw.value,
     )
 
 
 @app.command("pipe")
 def pipe_text(
-    shader: Path,
+    shader: str,
     mode: Mode = typer.Option(Mode.auto),
     terminal_width: Optional[int] = typer.Option(None, "--terminal-width", "--width"),
     terminal_height: Optional[int] = typer.Option(None, "--terminal-height", "--height"),
@@ -295,6 +393,7 @@ def pipe_text(
     layer: LayerMode = LayerMode.background,
     background_opacity: float = typer.Option(0.35),
     color: ColorMode = ColorMode.truecolor,
+    redraw: RedrawMode = RedrawMode.diff,
 ) -> None:
     text = sys.stdin.read()
     cols, rows = _terminal_grid_size(terminal_width, terminal_height)
@@ -312,35 +411,39 @@ def pipe_text(
             playback_level,
         )
         if layer == LayerMode.foreground:
-            sys.stdout.write(pixels_to_terminal(pixels, color, RenderStyle.half) + "\n")
+            output = pixels_to_terminal_bytes(pixels, color, RenderStyle.half)
         else:
-            sys.stdout.write(composite(pixels, cells, color, background_opacity) + "\n")
+            output = composite_bytes(pixels, cells, color, background_opacity)
+        _stdout_write(output.data + b"\n")
         return
 
     start = time.monotonic()
     frame_no = 0
     delay = _frame_delay(fps)
-    sys.stdout.write(clear_screen())
+    mouse_xy = _parse_mouse(mouse)
+    previous: FrameBytes | None = None
+    _stdout_write(clear_screen().encode("ascii"))
     try:
         while time.monotonic() - start < duration:
             now = time.monotonic() - start
             pixels = _shader_frame(
                 renderer,
-                RenderState(now * playback_rate, frame_no, _parse_mouse(mouse)),
+                RenderState(now * playback_rate, frame_no, mouse_xy),
                 cols,
                 rows * 2,
                 playback_level,
             )
             if layer == LayerMode.foreground:
-                output = pixels_to_terminal(pixels, color, RenderStyle.half)
+                output = pixels_to_terminal_bytes(pixels, color, RenderStyle.half)
             else:
-                output = composite(pixels, cells, color, background_opacity)
-            sys.stdout.write("\x1b[H" + output)
-            sys.stdout.flush()
+                output = composite_bytes(pixels, cells, color, background_opacity)
+            _stdout_write(encoded_redraw(previous, output, redraw.value))
+            _stdout_flush()
+            previous = output
             frame_no += 1
             _sleep_frame(delay)
     finally:
-        sys.stdout.write(show_cursor() + "\n")
+        _stdout_write((show_cursor() + "\n").encode("ascii"))
 
 
 def _print_comparison(label: str, result) -> None:

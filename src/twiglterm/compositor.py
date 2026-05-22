@@ -5,7 +5,8 @@ from typing import Iterable
 
 import numpy as np
 
-from .ansi import ColorMode, RESET, bg, dim_pixels, fg
+from .ansi import ColorMode
+from .terminal_output import composite_bytes
 
 try:
     import pyte
@@ -70,28 +71,7 @@ def composite(
     opacity: float = 0.35,
     cursor: tuple[int, int] | None = None,
 ) -> str:
-    background = dim_pixels(shader_pixels, opacity)
-    rows = list(cells)
-    lines: list[str] = []
-    for y, row in enumerate(rows):
-        parts: list[str] = []
-        src_y = min(y * 2, background.shape[0] - 1)
-        for x, cell in enumerate(row):
-            src_x = min(x, background.shape[1] - 1)
-            is_cursor = cursor == (x, y)
-            back_rgb = tuple(int(v) for v in background[src_y, src_x, :3])
-            fore_rgb = (0, 0, 0) if is_cursor else cell.fg
-            char = " " if cell.data == "\x00" else cell.data
-            if is_cursor and char == " ":
-                char = " "
-            parts.append(bg((230, 230, 230) if is_cursor else back_rgb, color_mode))
-            parts.append(fg(fore_rgb, color_mode))
-            if cell.bold:
-                parts.append("\x1b[1m")
-            parts.append(char)
-        parts.append(RESET)
-        lines.append("".join(parts))
-    return "\n".join(lines)
+    return composite_bytes(shader_pixels, cells, color_mode, opacity, cursor).data.decode("utf-8", errors="replace")
 
 
 def _named_color(name: str) -> tuple[int, int, int]:
@@ -107,4 +87,3 @@ def _named_color(name: str) -> tuple[int, int, int]:
         "default": (229, 229, 229),
     }
     return colors.get(str(name), colors["default"])
-
