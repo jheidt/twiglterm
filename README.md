@@ -1,5 +1,9 @@
 # twiglterm
 
+inspired by textfx, thanks sol :)
+
+a bit of vibes eh, but lots of textmode 
+
 `twiglterm` renders twigl-style fragment shaders in modern terminals.
 
 ## Install
