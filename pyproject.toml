@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "twiglterm"
+version = "0.1.0"
+description = "Render twigl shaders in modern terminals."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "moderngl>=5.12",
+    "glcontext>=3.0",
+    "numpy>=1.24",
+    "typer>=0.12",
+    "rich>=13",
+    "pyte>=0.8",
+    "pillow>=10",
+]
+
+[project.optional-dependencies]
+posix = ["ptyprocess>=0.7"]
+windows = ["pywinpty>=2.0"]
+test = ["pytest>=8"]
+
+[project.scripts]
+twiglterm = "twiglterm.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

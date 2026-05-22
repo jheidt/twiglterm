@@ -1,0 +1,15 @@
+// Source: https://fragcoord.xyz/s/f03tybz5
+// Title: Flare 2 [160]
+// Language: FragCoord golf
+
+// Common
+uniform f2 R;    // viewport size in pixels (width, height)
+uniform float T;         // seconds since playback started
+
+uniform s2 B
+
+uniform sampler2D u_main;
+
+// Main
+f2 p;for(float i=-1.;i<1.;i+=.1)O+=(cos(i/.3+f4(0,1,2,0))+1.)/(len(p*sin((p=((2.*C.xy-R)/R.y+i)/.2)*m2(cos(T-i-len(p)*.3-f4(0,11,33,0)))))+i*i);O=tanh(O*O/4e2);
+

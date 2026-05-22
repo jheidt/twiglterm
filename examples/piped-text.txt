@@ -1,0 +1,5 @@
+twiglterm pipe demo
+
+This text is coming from stdin.
+The shader keeps rendering behind it.
+
