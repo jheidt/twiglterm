@@ -63,8 +63,6 @@ uv run twiglterm play examples/gradient.frag --redraw full --duration 2
 uv run twiglterm frame examples/gradient.frag --layer foreground
 cat examples/piped-text.txt | uv run twiglterm pipe examples/gradient.frag --layer background
 
-# Compare Flare 2 against the reference render.
-uv run twiglterm compare examples/fragcoord-f03tybz5.frag examples/flare2-reference.png --terminal-width 160 --terminal-height 90 --render-width 320 --render-height 180 --time-scan 0:12:1
 ```
 
 Shader arguments can be local files or supported URLs:
@@ -80,24 +78,3 @@ uv run twiglterm frame "https://twigl.app/?mode=0&source=void+main()%7Bgl_FragCo
 uv run twiglterm info "https://www.shadertoy.com/view/example?source=void+mainImage(out+vec4+c,in+vec2+p)%7Bc%3Dvec4(1)%3B%7D"
 ```
 
-`examples/fragcoord-f03tybz5.frag` is a GLSL translation of the public FragCoord shader at <https://fragcoord.xyz/s/f03tybz5>. The original golf source is preserved in `examples/fragcoord-f03tybz5.golf`.
-`examples/flare2-reference.png` is the reference render used by `twiglterm compare`.
-Additional twigl examples are pulled from the official twigl README, a public twigl.app shared URL, and a twigl tutorial article.
-`examples/fragcoord-s0p2uz5l.frag` is adapted from a CC-BY-NC-SA-4.0 FragCoord shader by @Jaenam.
-`examples/fragcoord-bky38y8x.frag` is adapted from a CC0 FragCoord shader.
-`examples/fragcoord-p0385h9e.frag` is adapted from an MIT FragCoord shader by @yli110.
-`examples/fragcoord-s7efg0rw.frag` is adapted from an MIT FragCoord shader by @krisselden.
-
-Example launchers:
-
-```bash
-examples/fullscreen-drawille.sh
-examples/pipe-text.sh
-examples/compare-flare2.sh
-```
-
-```powershell
-.\examples\fullscreen-drawille.ps1
-.\examples\pipe-text.ps1
-.\examples\compare-flare2.ps1
-```
